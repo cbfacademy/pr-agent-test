@@ -1,21 +1,255 @@
+name: Create Preview PR from Fork
+
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
     branches:
       - main
+
 jobs:
+  security_check:
+    runs-on: ubuntu-latest
+    outputs:
+      is_safe: ${{ steps.set_is_safe.outputs.is_safe }}
+      sanitized_branch: ${{ steps.sanitize_inputs.outputs.branch_name }}
+      pr_number: ${{ steps.sanitize_inputs.outputs.pr_number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Sanitize user inputs
+        id: sanitize_inputs
+        run: |
+          # Sanitize branch name - only allow alphanumeric, dash, underscore
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_USER="${{ github.event.pull_request.user.login }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          # Remove any potentially dangerous characters
+          SAFE_PR_USER=$(echo "$PR_USER" | sed 's/[^a-zA-Z0-9_-]/-/g')
+          SAFE_SOURCE_BRANCH=$(echo "$SOURCE_BRANCH" | sed 's/[^a-zA-Z0-9_-]/-/g')
+          
+          # Create a safe branch name with a maximum length
+          SAFE_BRANCH="preview/pr-${PR_NUMBER}-${SAFE_PR_USER}-${SAFE_SOURCE_BRANCH}"
+          SAFE_BRANCH="${SAFE_BRANCH:0:60}"  # Limit length
+          
+          echo "branch_name=$SAFE_BRANCH" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+      
+      - name: Check for workflow and sensitive file changes
+        id: check_files
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const response = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            
+            const files = response.data.map(file => file.filename);
+            
+            // Check for workflow files and other sensitive paths
+            const sensitivePatterns = [
+              '.github/workflows/',
+              '.github/actions/',
+              'Dockerfile',
+              'docker-compose',
+              '.env',
+              'config',
+              'secrets',
+              '.npmrc',
+              '.yarnrc'
+            ];
+            
+            const sensitiveChanges = files.filter(file => 
+              sensitivePatterns.some(pattern => file.includes(pattern))
+            );
+            
+            let isSafe = true;
+            
+            if (sensitiveChanges.length > 0) {
+              console.log('PR contains changes to sensitive files:');
+              sensitiveChanges.forEach(file => console.log(` - ${file}`));
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `⚠️ This PR contains changes to sensitive files and cannot be automatically previewed for security reasons:\n\n${sensitiveChanges.map(f => `- \`${f}\``).join('\n')}`
+              });
+              
+              isSafe = false;
+            } else {
+              console.log('PR does not contain sensitive changes. Proceeding with preview.');
+            }
+            
+            // Check for extremely large PRs that might be DoS attempts
+            if (files.length > 500) {
+              console.log(`PR contains ${files.length} files which exceeds the limit.`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `⚠️ This PR contains too many files (${files.length}) and cannot be automatically previewed.`
+              });
+              isSafe = false;
+            }
+            
+            // Set output for the next steps using GITHUB_ENV file
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, `IS_SAFE=${isSafe ? 'true' : 'false'}\n`);
+
+      - name: Set is_safe output
+        id: set_is_safe
+        run: |
+          echo "is_safe=${{ env.IS_SAFE }}" >> $GITHUB_OUTPUT
+
+  create_preview_pr:
+    needs: security_check
+    if: github.event.pull_request.head.repo.full_name != github.repository && needs.security_check.outputs.is_safe == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # Prevent long-running jobs
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+      
+      - name: Create preview branch
+        run: |
+          # Use sanitized values from previous job
+          PREVIEW_BRANCH="${{ needs.security_check.outputs.sanitized_branch }}"
+          PR_NUMBER="${{ needs.security_check.outputs.pr_number }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          FORK_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          echo "Using sanitized branch name: $PREVIEW_BRANCH"
+          
+          # Fetch the base branch
+          git fetch origin ${BASE_BRANCH}
+          git checkout -b ${PREVIEW_BRANCH} origin/${BASE_BRANCH}
+          
+          # Pull changes from the fork with a timeout to prevent hanging
+          timeout 5m git pull https://github.com/${FORK_REPO}.git ${SOURCE_BRANCH} || {
+            echo "Git pull timed out - possibly malicious repository"
+            exit 1
+          }
+          
+          # Push the preview branch
+          git push -f origin ${PREVIEW_BRANCH}
+          
+          # Store branch name for next step
+          echo "PREVIEW_BRANCH=${PREVIEW_BRANCH}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
+      
+      - name: Scan for malicious content
+        run: |
+          # Basic security scan for suspicious patterns
+          # This is a simple example - consider using proper security scanning tools
+          
+          # Check for potential crypto miners
+          if grep -r "crypto\|miner\|monero" --include="*.js" .; then
+            echo "Potential cryptocurrency mining code detected"
+            exit 1
+          fi
+          
+          # Check for potential data exfiltration
+          if grep -r "curl\|wget\|fetch.*http" --include="*.sh" --include="*.js" .; then
+            echo "Potential data exfiltration code detected - manual review required"
+            exit 1
+          fi
+      
+      - name: Create or update internal PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const previewBranch = process.env.PREVIEW_BRANCH;
+            const originalPrNumber = process.env.PR_NUMBER;
+            const baseBranch = context.payload.pull_request.base.ref;
+            
+            // Sanitize PR title to prevent script injection
+            const prTitle = context.payload.pull_request.title
+              .replace(/[<>&'"]/g, '') // Remove HTML/script characters
+              .substring(0, 100);      // Limit length
+            
+            // Check if a PR from this preview branch already exists
+            const existingPrs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${previewBranch}`,
+              state: 'open'
+            });
+            
+            let pr;
+            
+            if (existingPrs.data.length > 0) {
+              // Update existing PR
+              pr = existingPrs.data[0];
+              console.log(`Updating existing preview PR #${pr.number}`);
+            } else {
+              // Create new PR
+              const newPr = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Preview] ${prTitle}`,
+                body: `This is an automated preview PR for #${originalPrNumber}.\n\nOriginal PR: #${originalPrNumber}`,
+                head: previewBranch,
+                base: baseBranch
+              });
+              pr = newPr.data;
+              console.log(`Created new preview PR #${pr.number}`);
+            }
+            
+            // Add a comment to the original PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: originalPrNumber,
+              body: `I've created a preview PR that can access repository secrets: #${pr.number}`
+            });
+            
+            // Store the PR number for the next job using GITHUB_ENV file
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_PR_NUMBER=${pr.number}\n`);
+
   pr_agent_job:
-    if: ${{ github.event.sender.type != 'Bot' }}
+    needs: [security_check, create_preview_pr]
+    if: needs.security_check.outputs.is_safe == 'true' && ${{ github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
       contents: write
-    name: Run pr agent on every pull request, respond to user comments
+    name: Run PR Agent on preview PR
     steps:
+    - name: Get PR number
+      run: |
+        # If PREVIEW_PR_NUMBER is not set, use the original PR number
+        if [ -z "${{ env.PREVIEW_PR_NUMBER }}" ]; then
+          echo "Using original PR number: ${{ github.event.pull_request.number }}"
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+        else
+          echo "Using preview PR number: ${{ env.PREVIEW_PR_NUMBER }}"
+          echo "PR_NUMBER=${{ env.PREVIEW_PR_NUMBER }}" >> $GITHUB_ENV
+        fi
+        
     - name: PR Agent action step
       id: pragent
       uses: qodo-ai/pr-agent@main
       env:
         OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PR_NUMBER: ${{ env.PR_NUMBER }}
