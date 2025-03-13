@@ -114,6 +114,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     
     steps:
       - name: Checkout repository
@@ -200,7 +201,7 @@ jobs:
             exit 1
           fi
       
-      - name: Create or update internal PR
+      - name: Add comment with preview branch info
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -214,45 +215,17 @@ jobs:
               .replace(/[<>&'"]/g, '') // Remove HTML/script characters
               .substring(0, 100);      // Limit length
             
-            // Check if a PR from this preview branch already exists
-            const existingPrs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${previewBranch}`,
-              state: 'open'
-            });
-            
-            let pr;
-            
-            if (existingPrs.data.length > 0) {
-              // Update existing PR
-              pr = existingPrs.data[0];
-              console.log(`Updating existing preview PR #${pr.number}`);
-            } else {
-              // Create new PR
-              const newPr = await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `[Preview] ${prTitle}`,
-                body: `This is an automated preview PR for #${originalPrNumber}.\n\nOriginal PR: #${originalPrNumber}`,
-                head: previewBranch,
-                base: baseBranch
-              });
-              pr = newPr.data;
-              console.log(`Created new preview PR #${pr.number}`);
-            }
-            
-            // Add a comment to the original PR
+            // Add a comment to the original PR with instructions
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: originalPrNumber,
-              body: `I've created a preview PR that can access repository secrets: #${pr.number}`
+              body: `I've created a preview branch that can access repository secrets: \`${previewBranch}\`\n\nTo review this PR with full access to secrets, you can view the code at:\nhttps://github.com/${context.repo.owner}/${context.repo.repo}/tree/${previewBranch}\n\nThe PR Agent will now run on this preview branch.`
             });
             
-            // Store the PR number for the next job using GITHUB_ENV file
+            // Store the PR number for the next job
             const fs = require('fs');
-            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_PR_NUMBER=${pr.number}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_PR_NUMBER=${originalPrNumber}\n`);
 
   pr_agent_job:
     needs: [security_check, create_preview_pr]
@@ -262,18 +235,17 @@ jobs:
       issues: write
       pull-requests: write
       contents: write
-    name: Run PR Agent on preview PR
+    name: Run PR Agent on preview branch
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.security_check.outputs.sanitized_branch }}
+        
     - name: Get PR number
       run: |
-        # If PREVIEW_PR_NUMBER is not set, use the original PR number
-        if [ -z "${{ env.PREVIEW_PR_NUMBER }}" ]; then
-          echo "Using original PR number: ${{ github.event.pull_request.number }}"
-          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-        else
-          echo "Using preview PR number: ${{ env.PREVIEW_PR_NUMBER }}"
-          echo "PR_NUMBER=${{ env.PREVIEW_PR_NUMBER }}" >> $GITHUB_ENV
-        fi
+        echo "Using original PR number: ${{ github.event.pull_request.number }}"
+        echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
         
     - name: PR Agent action step
       id: pragent
