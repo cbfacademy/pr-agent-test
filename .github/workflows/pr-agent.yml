@@ -125,6 +125,8 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
+          # Configure Git pull strategy to use merge
+          git config --global pull.rebase false
       
       - name: Create preview branch
         run: |
@@ -141,11 +143,38 @@ jobs:
           git fetch origin ${BASE_BRANCH}
           git checkout -b ${PREVIEW_BRANCH} origin/${BASE_BRANCH}
           
-          # Pull changes from the fork with a timeout to prevent hanging
-          timeout 5m git pull https://github.com/${FORK_REPO}.git ${SOURCE_BRANCH} || {
-            echo "Git pull timed out - possibly malicious repository"
-            exit 1
-          }
+          # Try to fetch the fork branch first
+          echo "Fetching from fork repository..."
+          git remote add fork https://github.com/${FORK_REPO}.git
+          git fetch fork ${SOURCE_BRANCH}
+          
+          # Try merge approach first
+          echo "Attempting to merge changes from fork..."
+          if git merge --no-commit --no-ff fork/${SOURCE_BRANCH}; then
+            echo "Merge successful"
+            git commit -m "Merge PR #${PR_NUMBER} from ${FORK_REPO}:${SOURCE_BRANCH}"
+          else
+            echo "Merge failed, aborting merge and trying cherry-pick approach..."
+            git merge --abort
+            
+            # Get the common ancestor commit
+            COMMON_ANCESTOR=$(git merge-base HEAD fork/${SOURCE_BRANCH})
+            echo "Common ancestor: ${COMMON_ANCESTOR}"
+            
+            # Get all commits from fork branch since common ancestor
+            COMMITS=$(git log --reverse --pretty=format:"%H" ${COMMON_ANCESTOR}..fork/${SOURCE_BRANCH})
+            
+            # Try to cherry-pick each commit
+            for COMMIT in ${COMMITS}; do
+              echo "Cherry-picking commit ${COMMIT}..."
+              if ! git cherry-pick ${COMMIT}; then
+                echo "Cherry-pick failed, aborting..."
+                git cherry-pick --abort
+                echo "Could not automatically merge changes from fork. Manual review required."
+                exit 1
+              fi
+            done
+          fi
           
           # Push the preview branch
           git push -f origin ${PREVIEW_BRANCH}
@@ -227,7 +256,7 @@ jobs:
 
   pr_agent_job:
     needs: [security_check, create_preview_pr]
-    if: needs.security_check.outputs.is_safe == 'true' && ${{ github.event.sender.type != 'Bot' }}
+    if: needs.security_check.outputs.is_safe == 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write
