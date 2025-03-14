@@ -1,7 +1,7 @@
-package com.example.demo.controller;
+package com.example.todos.controller;
 
-import com.example.demo.model.Todo;
-import com.example.demo.service.TodoService;
+import com.example.todos.model.Todo;
+import com.example.todos.service.TodoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

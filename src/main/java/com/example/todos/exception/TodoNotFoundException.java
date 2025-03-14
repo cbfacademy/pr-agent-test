@@ -1,4 +1,4 @@
-package com.example.demo.exception;
+package com.example.todos.exception;
 
 public class TodoNotFoundException extends RuntimeException {
     
