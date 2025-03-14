@@ -119,7 +119,7 @@ GET /api/todos/filter?completed=false&priority=HIGH
 - `exception`: Contains custom exceptions and exception handlers
 
 ## Testing
-Run the tests using Maven Wrapper:
+Navigate to the root directory of the project and run the tests using Maven Wrapper:
 ```sh
 ./mvnw test
 ```
