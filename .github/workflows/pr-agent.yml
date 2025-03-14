@@ -255,6 +255,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ env.PR_NUMBER }}
         github_action_config.auto_describe: false
+        github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "synchronize"]'
         pr_reviewer.require_score_review: true
         pr_reviewer.require_estimate_effort_to_review: false
         pr_reviewer.extra_instructions: |
