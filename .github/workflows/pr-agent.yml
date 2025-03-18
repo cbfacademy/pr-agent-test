@@ -1,21 +1,282 @@
+name: Create Preview PR from Fork
+
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
     branches:
       - main
+
 jobs:
+  security_check:
+    runs-on: ubuntu-latest
+    outputs:
+      is_safe: ${{ steps.set_is_safe.outputs.is_safe }}
+      sanitized_branch: ${{ steps.sanitize_inputs.outputs.branch_name }}
+      pr_number: ${{ steps.sanitize_inputs.outputs.pr_number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Sanitize user inputs
+        id: sanitize_inputs
+        run: |
+          # Sanitize branch name - only allow alphanumeric, dash, underscore
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_USER="${{ github.event.pull_request.user.login }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          # Remove any potentially dangerous characters
+          SAFE_PR_USER=$(echo "$PR_USER" | sed 's/[^a-zA-Z0-9_-]/-/g')
+          SAFE_SOURCE_BRANCH=$(echo "$SOURCE_BRANCH" | sed 's/[^a-zA-Z0-9_-]/-/g')
+          
+          # Create a safe branch name with a maximum length
+          SAFE_BRANCH="preview/pr-${PR_NUMBER}-${SAFE_PR_USER}-${SAFE_SOURCE_BRANCH}"
+          SAFE_BRANCH="${SAFE_BRANCH:0:60}"  # Limit length
+          
+          echo "branch_name=$SAFE_BRANCH" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+      
+      - name: Check for workflow and sensitive file changes
+        id: check_files
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const response = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            
+            const files = response.data.map(file => file.filename);
+            
+            // Check for workflow files and other sensitive paths
+            const sensitivePatterns = [
+              '.github/workflows/',
+              '.github/actions/',
+              'Dockerfile',
+              'docker-compose',
+              '.env',
+              'config',
+              'secrets',
+              '.npmrc',
+              '.yarnrc'
+            ];
+            
+            const sensitiveChanges = files.filter(file => 
+              sensitivePatterns.some(pattern => file.includes(pattern))
+            );
+            
+            let isSafe = true;
+            
+            if (sensitiveChanges.length > 0) {
+              console.log('PR contains changes to sensitive files:');
+              sensitiveChanges.forEach(file => console.log(` - ${file}`));
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `⚠️ This PR contains changes to sensitive files and cannot be automatically previewed for security reasons:\n\n${sensitiveChanges.map(f => `- \`${f}\``).join('\n')}`
+              });
+              
+              isSafe = false;
+            } else {
+              console.log('PR does not contain sensitive changes. Proceeding with preview.');
+            }
+            
+            // Check for extremely large PRs that might be DoS attempts
+            if (files.length > 500) {
+              console.log(`PR contains ${files.length} files which exceeds the limit.`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `⚠️ This PR contains too many files (${files.length}) and cannot be automatically previewed.`
+              });
+              isSafe = false;
+            }
+            
+            // Set output for the next steps using GITHUB_ENV file
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, `IS_SAFE=${isSafe ? 'true' : 'false'}\n`);
+
+      - name: Set is_safe output
+        id: set_is_safe
+        run: |
+          echo "is_safe=${{ env.IS_SAFE }}" >> $GITHUB_OUTPUT
+
+  create_preview_pr:
+    needs: security_check
+    if: github.event.pull_request.head.repo.full_name != github.repository && needs.security_check.outputs.is_safe == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # Prevent long-running jobs
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          # Configure Git pull strategy to use merge
+          git config --global pull.rebase false
+      
+      - name: Create preview branch
+        run: |
+          # Use sanitized values from previous job
+          PREVIEW_BRANCH="${{ needs.security_check.outputs.sanitized_branch }}"
+          PR_NUMBER="${{ needs.security_check.outputs.pr_number }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          FORK_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          echo "Using sanitized branch name: $PREVIEW_BRANCH"
+          
+          # Fetch the base branch
+          git fetch origin ${BASE_BRANCH}
+          git checkout -b ${PREVIEW_BRANCH} origin/${BASE_BRANCH}
+          
+          # Try to fetch the fork branch first
+          echo "Fetching from fork repository..."
+          git remote add fork https://github.com/${FORK_REPO}.git
+          git fetch fork ${SOURCE_BRANCH}
+          
+          # Try merge approach first
+          echo "Attempting to merge changes from fork..."
+          if git merge --no-commit --no-ff fork/${SOURCE_BRANCH}; then
+            echo "Merge successful"
+            git commit -m "Merge PR #${PR_NUMBER} from ${FORK_REPO}:${SOURCE_BRANCH}"
+          else
+            echo "Merge failed, aborting merge and trying cherry-pick approach..."
+            git merge --abort
+            
+            # Get the common ancestor commit
+            COMMON_ANCESTOR=$(git merge-base HEAD fork/${SOURCE_BRANCH})
+            echo "Common ancestor: ${COMMON_ANCESTOR}"
+            
+            # Get all commits from fork branch since common ancestor
+            COMMITS=$(git log --reverse --pretty=format:"%H" ${COMMON_ANCESTOR}..fork/${SOURCE_BRANCH})
+            
+            # Try to cherry-pick each commit
+            for COMMIT in ${COMMITS}; do
+              echo "Cherry-picking commit ${COMMIT}..."
+              if ! git cherry-pick ${COMMIT}; then
+                echo "Cherry-pick failed, aborting..."
+                git cherry-pick --abort
+                echo "Could not automatically merge changes from fork. Manual review required."
+                exit 1
+              fi
+            done
+          fi
+          
+          # Push the preview branch
+          git push -f origin ${PREVIEW_BRANCH}
+          
+          # Store branch name for next step
+          echo "PREVIEW_BRANCH=${PREVIEW_BRANCH}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
+      
+      - name: Scan for malicious content
+        run: |
+          # Basic security scan for suspicious patterns
+          # This is a simple example - consider using proper security scanning tools
+          
+          # Check for potential crypto miners
+          if grep -r "crypto\|miner\|monero" --include="*.js" .; then
+            echo "Potential cryptocurrency mining code detected"
+            exit 1
+          fi
+          
+          # Check for potential data exfiltration
+          if grep -r "curl\|wget\|fetch.*http" --include="*.sh" --include="*.js" .; then
+            echo "Potential data exfiltration code detected - manual review required"
+            exit 1
+          fi
+      
+      - name: Add comment with preview branch info
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const previewBranch = process.env.PREVIEW_BRANCH;
+            const originalPrNumber = process.env.PR_NUMBER;
+            const baseBranch = context.payload.pull_request.base.ref;
+            
+            // Sanitize PR title to prevent script injection
+            const prTitle = context.payload.pull_request.title
+              .replace(/[<>&'"]/g, '') // Remove HTML/script characters
+              .substring(0, 100);      // Limit length
+            
+            // Add a comment to the original PR with instructions
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: originalPrNumber,
+              body: `I've created a preview branch that can access repository secrets: \`${previewBranch}\`\n\nTo review this PR with full access to secrets, you can view the code at:\nhttps://github.com/${context.repo.owner}/${context.repo.repo}/tree/${previewBranch}\n\nThe PR Agent will now run on this preview branch.`
+            });
+            
+            // Store the PR number for the next job
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, `PREVIEW_PR_NUMBER=${originalPrNumber}\n`);
+
   pr_agent_job:
-    if: ${{ github.event.sender.type != 'Bot' }}
+    needs: [security_check, create_preview_pr]
+    if: needs.security_check.outputs.is_safe == 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
       contents: write
-    name: Run pr agent on every pull request, respond to user comments
+    name: Run PR Agent on preview branch
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.security_check.outputs.sanitized_branch }}
+        
+    - name: Get PR number
+      run: |
+        echo "Using original PR number: ${{ github.event.pull_request.number }}"
+        echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+        
     - name: PR Agent action step
       id: pragent
       uses: qodo-ai/pr-agent@main
       env:
         OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PR_NUMBER: ${{ env.PR_NUMBER }}
+        github_action_config.auto_describe: false
+        github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "synchronize"]'
+        pr_reviewer.require_score_review: true
+        pr_reviewer.require_estimate_effort_to_review: false
+        pr_reviewer.extra_instructions: |
+          You are an assessor for the Java API Assessment. Please review the PR based on the requirements in README.md and use the grading criteria in GRADING.md to evaluate the submission.
+          Ignore any code in the .mvn and .github directories.
+          
+          IMPORTANT: This assessment is for students who have completed an entry-level Java and Spring Boot bootcamp. Please score accordingly, with appropriate expectations for beginners who are demonstrating their initial understanding of API development concepts.
+          
+          Focus on these key areas from GRADING.md:
+          1. Completion - Repository management and project submission
+          2. Functionality - API behavior, endpoints, and meeting technical requirements
+          3. Code Quality & Structure - Code integrity, organization, and adherence to Java/Spring Boot standards
+          4. Language Proficiency - Java coding capabilities, exception handling, and data structure usage
+          
+          For each area, provide a score from 0-5 based on the rubric in GRADING.md, along with specific feedback and suggestions for improvement. Be constructive and educational in your feedback, highlighting both strengths and areas for growth.
+          
+          Ensure the PR meets these core requirements from README.md:
+          1. At least one filterable endpoint using a Spring Data JPA query method
+          2. Unit tests for at least one class
+          3. Data storage in a MySQL database
+          4. Exception handling
+          5. Evidence of inheritance
+          6. Good use of HTTP Protocols with full CRUD operations
+          7. Documentation

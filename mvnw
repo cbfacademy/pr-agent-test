@@ -276,33 +276,3 @@ if [ -n "$wrapperSha256Sum" ]; then
     echo "Error: Failed to validate Maven wrapper SHA-256, your Maven wrapper might be compromised." >&2
     echo "Investigate or delete $wrapperJarPath to attempt a clean download." >&2
     echo "If you updated your Maven version, you need to update the specified wrapperSha256Sum property." >&2
-    exit 1
-  fi
-fi
-
-MAVEN_OPTS="$(concat_lines "$MAVEN_PROJECTBASEDIR/.mvn/jvm.config") $MAVEN_OPTS"
-
-# For Cygwin, switch paths to Windows format before running java
-if $cygwin; then
-  [ -n "$JAVA_HOME" ] &&
-    JAVA_HOME=$(cygpath --path --windows "$JAVA_HOME")
-  [ -n "$CLASSPATH" ] &&
-    CLASSPATH=$(cygpath --path --windows "$CLASSPATH")
-  [ -n "$MAVEN_PROJECTBASEDIR" ] &&
-    MAVEN_PROJECTBASEDIR=$(cygpath --path --windows "$MAVEN_PROJECTBASEDIR")
-fi
-
-# Provide a "standardized" way to retrieve the CLI args that will
-# work with both Windows and non-Windows executions.
-MAVEN_CMD_LINE_ARGS="$MAVEN_CONFIG $*"
-export MAVEN_CMD_LINE_ARGS
-
-WRAPPER_LAUNCHER=org.apache.maven.wrapper.MavenWrapperMain
-
-# shellcheck disable=SC2086 # safe args
-exec "$JAVACMD" \
-  $MAVEN_OPTS \
-  $MAVEN_DEBUG_OPTS \
-  -classpath "$MAVEN_PROJECTBASEDIR/.mvn/wrapper/maven-wrapper.jar" \
-  "-Dmaven.multiModuleProjectDirectory=${MAVEN_PROJECTBASEDIR}" \
-  ${WRAPPER_LAUNCHER} $MAVEN_CONFIG "$@"
