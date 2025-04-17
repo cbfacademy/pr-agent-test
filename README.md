@@ -1,134 +1,203 @@
-# Java API Assessment
+# wegrocerieapi
 
-## Introduction
-This assessment requires you to build a RESTful API, using all you've learned about software development using Java and Spring Boot.
-
-You can build any API of your choosing, but it **must** include the following:
-
-1. At least one GET endpoint that can have its results filtered using a Spring Data JPA query method (custom or derived)
-2. Unit tests for at least one class
-3. Data storage in a MySQL database
-4. Exception handling
-5. Evidence of inheritance
-6. Good use of HTTP Protocols - methods, request and response, have full CRUD operations supported
-7. Documentation
-
-### Learning Outcomes
-
-By the end of this assessment, you should be able to:
-
-1. **Design and Architect APIs**: Get to grips with the nitty-gritty of curating a top-quality API, focusing on data flow and endpoint interactions.
-1. **Implement Best Practices**: Showcase your adherence to Java and Spring Boot coding standards, error handling, and optimal project structure.
-2. **Code Integration**: Seamlessly combine your custom code with the Spring Initializr project.
-3. **Exception Management**: Efficiently handle exceptions, ensuring your API remains sturdy and dependable.
-
-Onward with this assessment, you're set for a deep dive into API development with Java and Spring Boot.
-
-## Design & Requirements
-
-### Design Considerations
-- **API Flow**: Map out your API's progression, from endpoints to their functionalities.
-
-### Requirements List
-- **Core**: Make use of Java and Spring Boot.
-- **Endpoints**: Ensure they are detailed and fully operational.
-- **Error Handling**: Your API should handle mishaps gracefully and return informative feedback.
-
-### Learning Outcomes
-- Acknowledge the pivotal role of a focused design in APIs.
-- See firsthand how a detailed requirements list can pave the way for successful development.
-
-## Repository Management
-
-- **Consistent Commits**: Commit often, capturing your progress and thought process.
-- **README**: Not just an afterthought. Fill it with the essence of your API, setup instructions, and other salient details.
-
-### **Learning Outcomes:**
-- Hone your skills in effective version control.
-- Recognise the value of a well-curated repository.
-
-## Code Quality & Structure
-
-- **Best Practices**: Stick to Java and Spring Boot best practices and conventions.
-- **Modularity**: Your code should be modular, reusable, and easily comprehensible.
-
-#### Learning Outcomes
-- Craft clean, efficient, and maintainable code.
-- Harness Java and Spring Boot to the fullest.
-
----
+## Description
+wegroceriesapi is a RESTful service designed to enable sellers, buyers, and delivery services to connect seamlessly for wholesale grocery transactions. It supports product management, order processing, and user management using CRUD to place an order, retrieve all orders, get order details by ID and update order details. The UserService module provides essential functionalities for user registration, retrieval, updating, and deletion. This API adheres to a clean and modular structure for easy scalability, maintainability, and robust user management.
 
 ## Getting Started
 
-- [Prerequisites](#prerequisites)
+## Project Management 
+GitHub kanban board 
 
-- [Setup](#setup)
-
-### Prerequisites
-
-Before you begin, make sure you have the following installed:
-
-1. [JDK 21](https://learn.microsoft.com/en-gb/java/openjdk/download#openjdk-21) (or higher)
-
-2. [Git](https://git-scm.com/downloads)
-
-3. [Visual Studio Code](https://code.visualstudio.com/Download)
-   1. [Extension Pack for Java](https://marketplace.visualstudio.com/items?itemName=vscjava.vscode-java-pack)
-   2. [Spring Boot Extension Pack](https://marketplace.visualstudio.com/items?itemName=vmware.vscode-boot-dev-pack)
-
-Also make sure you have accounts for the following:
-
-1. [GitHub](https://github.com/signup)
-
-### Setup
-
-1. Create a new repository on GitHub and clone it to your local machine.
-2. Create a new Spring Boot project using [Spring Initializr](https://start.spring.io/). Choose the appropriate options for your project, such as the programming language, framework, and dependencies. Unzip the downloaded archive into your repository.
-3. Implement the functionality of your API to fulfill the requirements.
-
-## **Deliverables**
-
-Ensure that your work is merged to the `main` branch of your GitHub repository by the specified deadline (original or extended). Your solution will assessed based on the state of that branch *at that point in time*; any feature branches or later commits will **not** be taken into account.
-
-### Export Database
-
-To ensure that your project can be assessed correctly, you **must** include a database dump file that can be used to restore a usable database and document the file's location in your `README.md` file.
-
-You can generate a dump file using the command line or MySQL Workbench:
-
-#### Command Line
-
-Execute the following command to export the database:
+### Clone Repository
+1. Fork this repository in your GitHub account
+2. Clone your fork locally or open in CodeSpaces.
 
 ```sh
-mysqldump -u [username] -p --databases [database_name] > [dump_file.sql]
+git clone [REPO_URL]
+cd [REPO_NAME]
 ```
 
-Replace `[username]`, `[database_name]`, and `[dump_file.sql]` with your MySQL username, the name of the database you want to dump, and the desired filename for the dump file, respectively. Remove the `-p` flag if you don't have a password set for your MySQL user.
+**Note:** Replace [REPO_URL] with the link to your GitHub repository and [REPO_NAME] with the repository's name.
 
-#### MySQL Workbench
+### Create Database
+1. Login to MySQL:
 
-1. Open MySQL Workbench.
-2. Connect to your MySQL server.
-3. Go to the "Server" menu and select "Data Export".
-4. Select the database you want to export:
-   - In the "Data Export" tab, check the box next to the database you want to export.
-5. Choose the Export Options:
-   - Select "Dump Structure and Data" to include both the database schema and the data.
-   - Choose "Export to Self-Contained File" and provide a filename for the dump file.
-6. Include the Create Database Statement:
-   - In the "Advanced Options" section, ensure that the "Add DROP DATABASE" and "Add CREATE DATABASE" options are checked. This ensures that the dump file will contain statements to drop and create the database.
-7. Start the Export:
-   - Click the "Start Export" button to generate the dump file.
+```sh
+mysql -u root -p
+```
+**Note:** If your root user doesn't have a password set, omit the `-p` flag.
+2. Create a new database:
 
-## Top Tips
+```sh
+CREATE DATABASE IF NOT EXISTS wegroceriesapi;
+exit;
+```
+### Initialise project
+1. open your repository in VS Code
+2. Add the following values to src/main/resources/application.properties:
 
-- :camera_flash: Commit frequently and use meaningful commit messages. A granular, well-labelled history becomes an increasingly valuable asset over time.
-- :cactus: Use feature branches. Build the habit of isolating your changes for specific tasks and merging them into your default branch when complete.
-- :vertical_traffic_light: Use consistent naming conventions. Choose easily understandable names and naming patterns for your classes, functions and variables.
-- :triangular_ruler: Keep your code tidy. Using the built-in formatting of VS Code or other IDEs makes your code easier to read and mistakes easier to spot.
-- :books: Read the docs. Whether via Intellisense in your IDE, or browsing online documentation, build a clear understanding of the libraries your code leverages.
-- :calendar: Don't wait until the last minute. Plan your work early and make the most of the time available to complete the assessment and avoid pre-deadline palpitations.
-- :sos: Ask. :clap: For. :clap: Help! :clap: Your mentors, instructors and assistants are literally here to support you, so *make use of them* - don't sit and struggle in silence.
+```sh
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.open-in-view=true
+spring.config.import=optional:./local.properties;
+```
+3. In order to prevent sensitive values from being committed to version control, add a new entry to the .gitignore file:
 
-Best of luck! Remember, it's not just about the destination; it's the journey. Happy coding! 🚀
+```sh
+local.properties
+```
+
+4. Create a new file at src/main/resources/local.properties and paste in the following:
+
+```sh
+spring.datasource.url=jdbc:mysql://localhost:3306/springbootexercise
+
+# Replace "root" with your database user, if applicable
+spring.datasource.username=root
+
+# Specify your database user's password, if applicable. If your database user doesn't have a password set, delete the line below
+spring.datasource.password=YOUR_MYSQL_PASSWORD
+``` 
+
+5. Replace the username and password values with your MySQL credentials. IMPORTANT: Ensure there are no spaces before or after the password.
+
+### Run Application
+To start the API, run the following command:
+
+#### macOS / Git Bash
+
+```sh 
+./mvnw spring-boot:run
+```
+#### Windows Command Prompt
+
+```cmd
+mvnw spring-boot:run
+```
+
+If successful, you should see output that ends similarly to the following:
+2025-01-30T21:38:56.281Z  INFO 27184 --- [wegroceriesapi] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2025-01-30T21:38:56.281Z  INFO 27184 --- [wegroceriesapi] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+mcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2025-01-30T21:38:56.291Z  INFO 27184 --- [wegroceriesapi] [           main] c.w.w.WegroceriesapiApplication          : Started WegroceriesapiApplication in 4.127 seconds (process running for 4.461)
+
+## IMPORTANT 
+If everything is working correctly, the output will appear "stuck" and the command prompt won't return until you stop the application, which should now be running at http://localhost:8080/api/users.
+
+## The JSON representation of an IOU that you'll get in responses or provide in the request body for POST and PUT requests will resemble the following:
+/*
+{
+    "id": "359a0cdb-0a38-4f07-894f-a2a9bccd271d",
+    "username": "amy",
+    "email": "soso@example.com",
+    "password": "securePass123",
+    "firstName": "Amy",
+    "lastName": "Solomon",
+    "createdAt": "2025-02-11T19:57:36.355839300Z",
+    "updatedAt": "2025-02-11T19:57:36.355839300Z"
+} 
+
+### Stop Application
+Stop the application by pressing `Ctrl + C`
+
+## API Endpoints
+Below are the primary endpoints for Users, Products, and Orders:
+
+### User Endpoints:
+Method	Endpoint	Description	Auth Required
+POST	/api/users/register	Register a new user	 No
+POST	/api/users/login	Authenticate user No
+GET	/api/users/{id}	Get user by ID	 Yes
+PUT	/api/users/{id}	Update user details Yes
+DELETE	/api/users/{id}	Delete user	 Yes
+
+### Product Endpoints:
+Method	Endpoint	Description	    Auth Required
+POST	/api/products	Add a new product	 Yes
+GET	/api/products	Retrieve all products	 No
+GET	/api/products/{id}	Get product by ID	 No
+PUT	/api/products/{id}	Update product details Yes
+DELETE	/api/products/{id}	Delete a product	 Yes
+
+### Order Endpoints:
+Method	Endpoint	Description	 Auth Required
+POST	/api/orders	Place a new order	 Yes
+GET	/api/orders	Retrieve all orders	 Yes
+GET	/api/orders/{id}	Get order by ID	 Yes
+PUT	/api/orders/{id}	Update order details  Yes
+DELETE	/api/orders/{id}	Cancel an order	 Yes
+
+## Key Tools & Technologies
+ Backend: Spring Boot, Java, Maven
+ Database: MySQL
+ Security: Spring Security, JWT Authentication
+ Testing: JUnit, Mockito, Postman
+ Deployment: Docker, AWS/Heroku/Render
+ Version Control: GitHub
+ Project Management method:  Kanban - GitHub
+
+## Features
+Product Management: Add, update, delete, and retrieve product details.
+Order Processing: Create, view, update, and delete orders.
+User management: Create, view, update, and delete users.
+
+## Features Roadmap
+User Management: Registration, login, authentication.
+Security: JWT-based authentication and role-based access control.
+Authentication: Include the Authorization: Bearer <token> in request headers.
+
+## Deployment
+The API can be deployed using Docker, AWS, or Heroku.
+
+## Run with Docker
+
+## Conclusion
+This API provides a scalable, secure, and efficient way to manage groceries online.
+For any issues, create a GitHub Issue or reach out to the WeGroceries API team.
+
+## Project strusture
+
+src
+├── main
+│   ├── java
+│   │   ├── com
+│   │   │   ├── wegroceries
+│   │   │   │   ├── WeGroceriesApplication.java        # Main application entry point
+│   │   │   │   ├── Exception                          # Exception features
+│   │   │   │   │   ├── GlobalExceptionHandler.java    # Custom Exception
+│   │   │   │   │   ├── InvalidUserDataException.java  # Custom Exception
+│   │   │   │   │   ├── OrderNotFoundException.java    # Custom Exception
+│   │   │   │   │   ├── UserNameNotFoundException.java # Custom Exception
+│   │   │   │   │   ├── UserNotFoundException.java     # Custom Exception
+│   │   │   │   ├── orders                             # Order feature
+│   │   │   │   │   ├── Order.java                     # Order entity
+│   │   │   │   │   ├── OrderController.java           # Order controller
+│   │   │   │   │   ├── OrderRepository.java           # Order Repository 
+│   │   │   │   │   └── OrderService.java              # Order service
+│   │   │   │   ├── products                           # Product feature
+│   │   │   │   │   ├── Product.java                   # Product entity
+│   │   │   │   │   ├── ProductController.java         # Product controller
+│   │   │   │   │   └── ProductRepository.java         # Product repository
+│   │   │   │   │   ├── ProductService.java            # Product service
+│   │   │   │   ├── users                              # User feature
+│   │   │   │   │   ├── CustomUserDetailsService.java  # Custom User Details
+│   │   │   │   │   ├── User.java                      # User entity
+│   │   │   │   │   ├── UserController.java            # User controller
+│   │   │   │   │   ├── UserRepository.java            # User repository
+│   │   │   │   │   ├── UserService.java               # User service logic
+│   │   │   │   ├── WegroceriesapiApplication.java     # Global exceptions
+│   ├── resources
+│   │   ├── application.properties                     # Application properties (e.g., DB config, server)
+│   │   ├── local.properties
+│   ├── test\java\com\wegroceries                      # Application test
+│   │   ├── orders        
+│   │   │   ├── OderControllerTest.java                # Application test
+│   │   ├── products
+│   │   │   ├── ProductControllerTest.java             # Application test
+│   │   ├── users
+│   │   │   ├── UserControllerTest.java                # Application test
+│   │   ├── wegroceriesapi
+│   │   │   ├── wegroceriesapiApplicationTest.java     # wegroceries Application class
+├── pom.xml                                            # Maven build file with dependencies
+└── README.md
