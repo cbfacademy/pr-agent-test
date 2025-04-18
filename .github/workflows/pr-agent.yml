@@ -254,10 +254,13 @@ jobs:
         OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ env.PR_NUMBER }}
-        require_score_review: true
-        require_estimate_effort_to_review: false
-        extra_instructions: |
+        github_action_config.auto_describe: false
+        github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "synchronize"]'
+        pr_reviewer.require_score_review: true
+        pr_reviewer.require_estimate_effort_to_review: false
+        pr_reviewer.extra_instructions: |
           You are an assessor for the Java API Assessment. Please review the PR based on the requirements in README.md and use the grading criteria in GRADING.md to evaluate the submission.
+          Ignore any code in the .mvn and .github directories.
           
           IMPORTANT: This assessment is for students who have completed an entry-level Java and Spring Boot bootcamp. Please score accordingly, with appropriate expectations for beginners who are demonstrating their initial understanding of API development concepts.
           
